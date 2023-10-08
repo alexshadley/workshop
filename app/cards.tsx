@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   PlusIcon,
   ArrowPathIcon,
@@ -10,7 +10,7 @@ import {
   ArrowUpOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import { v4 as uuid } from 'uuid';
-import { shuffle, pickBy } from 'lodash';
+import { shuffle, pickBy, isEqual, clone, cloneDeep } from 'lodash';
 import {
   DndContext,
   DragEndEvent,
@@ -32,6 +32,16 @@ type DuplicateCard = { type: 'duplicate'; id: string; parentId: string };
 
 type Card = OriginalCard | DuplicateCard;
 
+let handler = null;
+const debounce =
+  (fn, delay) =>
+  (...args) => {
+    if (handler) {
+      clearTimeout(handler);
+    }
+    handler = setTimeout(() => fn(...args), delay);
+  };
+
 export const Cards = () => {
   // registry of all cards
   const firstCardId = uuid();
@@ -47,6 +57,52 @@ export const Cards = () => {
   // ordering of cards in deck
   const [deck, setDeck] = useState<string[]>([firstCardId]);
   const [hands, setHands] = useState<string[][]>([[]]);
+
+  const unputChanges = useRef(false);
+  const firstFetchDone = useRef(false);
+
+  const fetchLatestData = async () => {
+    const data = (await (await fetch('api/getData')).json())['data'];
+    setCards(data.cards);
+    setDeck(data.deck);
+    setHands(data.hands);
+    console.log('data', data);
+    firstFetchDone.current = true;
+  };
+
+  const putData = debounce(async (data: any) => {
+    console.log('putting', data);
+    await fetch('api/putData', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    unputChanges.current = false;
+  }, 2000);
+
+  useEffect(() => {
+    const work = async () => {
+      console.log('unput changes?', unputChanges.current);
+      if (!unputChanges.current) {
+        await fetchLatestData();
+      }
+    };
+
+    const handler = setInterval(work, 5000);
+    fetchLatestData();
+    return () => clearTimeout(handler);
+  }, []);
+
+  const lastPut = useRef(null);
+  useEffect(() => {
+    if (
+      !isEqual(lastPut.current, { cards, deck, hands }) &&
+      firstFetchDone.current
+    ) {
+      unputChanges.current = true;
+      lastPut.current = { cards, deck, hands };
+      putData({ cards, deck, hands });
+    }
+  }, [cards, deck, hands]);
 
   const shuffleDeck = () => {
     setDeck((oldDeck) => shuffle(oldDeck));
@@ -233,9 +289,6 @@ const Deck = ({
       type: 'deck',
     },
   });
-
-  console.log('cards', cards);
-  console.log('deck', deck);
 
   return (
     <div>
