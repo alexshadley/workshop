@@ -8,6 +8,7 @@ import {
   EyeSlashIcon,
   TrashIcon,
   ArrowUpOnSquareIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import {
   DndContext,
@@ -29,96 +30,6 @@ export const Cards = () => {
     submitMove,
     submitShuffle,
   } = useSyncedState();
-
-  // const newCard = () => {
-  //   const n = {
-  //     type: 'original',
-  //     id: uuid(),
-  //     name: '',
-  //     description: '',
-  //     duplication: 1,
-  //   } as const;
-  //   setCards((oldCards) => ({
-  //     [n.id]: n,
-  //     ...oldCards,
-  //   }));
-  //   setDeck((oldDeck) => [n.id, ...oldDeck]);
-  // };
-
-  // const addCardsToHand = (cardIds: string[], handIndex: number) => {
-  //   setHands((oldHands) => {
-  //     console.log('adding to', oldHands);
-  //     return oldHands.map<string[]>((h, i) => {
-  //       if (i === handIndex) {
-  //         return [...cardIds, ...h];
-  //       } else {
-  //         return [...h];
-  //       }
-  //     });
-  //   });
-  // };
-
-  // const updateCard = (card: OriginalCard) => {
-  //   const originalCard = cards[card.id] as OriginalCard;
-
-  //   let duplicationChange = card.duplication - originalCard.duplication;
-
-  //   // console.log('duplication change', duplicationChange);
-
-  //   let newDuplicates: DuplicateCard[] = [];
-  //   let dupeIdsToDelete: string[] = [];
-  //   if (duplicationChange > 0) {
-  //     for (let i = 0; i < duplicationChange; i++) {
-  //       newDuplicates.push({
-  //         type: 'duplicate',
-  //         id: uuid(),
-  //         parentId: originalCard.id,
-  //       });
-  //     }
-  //   } else if (duplicationChange < 0) {
-  //     const dupeIds = Object.values(cards)
-  //       .filter((c) => c.type === 'duplicate' && c.parentId === originalCard.id)
-  //       .map((c) => c.id);
-  //     console.log('dupeIds', dupeIds);
-  //     console.log('duplication change', duplicationChange);
-  //     dupeIdsToDelete = dupeIds.slice(0, duplicationChange * -1);
-  //     console.log('dupeIdsToDelete', dupeIds);
-  //   }
-
-  //   setCards((oldCards) => {
-  //     const newCards = { ...oldCards };
-  //     newDuplicates.forEach((d) => (newCards[d.id] = d));
-  //     dupeIdsToDelete.forEach((id) => delete newCards[id]);
-
-  //     return { ...newCards, [card.id]: card };
-  //   });
-  //   setDeck((oldDeck) => {
-  //     let newDeck = [...oldDeck];
-  //     const originalPosition = oldDeck.indexOf(originalCard.id);
-  //     newDuplicates.forEach((d) => newDeck.splice(originalPosition, 0, d.id));
-
-  //     return newDeck;
-  //   });
-  //   removeCardsEverywehre(dupeIdsToDelete);
-  // };
-
-  // const deleteCard = (id: string) => {
-  //   const originalCard = cards[id] as OriginalCard;
-
-  //   const idsToDelete = Object.values(cards)
-  //     .filter(
-  //       (c) =>
-  //         (c.type === 'original' && c.id === originalCard.id) ||
-  //         (c.type === 'duplicate' && c.parentId === originalCard.id)
-  //     )
-  //     .map((c) => c.id);
-
-  //   console.log('idsToDelete', idsToDelete);
-  //   setCards((oldCards) =>
-  //     pickBy(oldCards, (c) => !idsToDelete.includes(c.id))
-  //   );
-  //   removeCardsEverywehre(idsToDelete);
-  // };
 
   const drawTopCard = (handIndex: number) => {
     if (deck.length > 0) {
@@ -296,7 +207,7 @@ const CardTile = ({
 
   return (
     <div
-      className="flex p-2 border rounded border-gray-300 bg-gray-100 h-10"
+      className="flex p-2 border rounded border-gray-300 bg-gray-100 h-10 group"
       style={style}
     >
       <Image
@@ -345,13 +256,29 @@ const CardTile = ({
           <TrashIcon className="w-6 h-6 cursor-pointer" onClick={onDelete} />
         )}
         {!deleteMode && shown && (
-          <EditableNumber
-            classes="w-6"
-            value={originalCard.duplication}
-            onChange={(newVal) =>
-              onUpdate({ ...originalCard, duplication: newVal })
-            }
-          />
+          <>
+            <XMarkIcon
+              className={
+                'w-3 h-3' +
+                (originalCard.duplication === 1
+                  ? ' invisible group-hover:visible focus:visible'
+                  : '')
+              }
+              style={{ marginTop: '5px', marginRight: '3px' }}
+            />
+            <EditableNumber
+              classes={
+                'w-6' +
+                (originalCard.duplication === 1
+                  ? ' invisible group-hover:visible focus:visible'
+                  : '')
+              }
+              value={originalCard.duplication}
+              onChange={(newVal) =>
+                onUpdate({ ...originalCard, duplication: newVal })
+              }
+            />
+          </>
         )}
       </div>
     </div>

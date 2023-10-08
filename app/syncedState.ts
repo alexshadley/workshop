@@ -43,169 +43,30 @@ export type CardMove = {
     | { type: 'hand'; handIndex: number; position: number };
 };
 
-const getDiff = (original: AppState, next: AppState) => {
-  // const changes: Change[] = [];
-
-  const originalCardIds = Object.keys(original.cards);
-  const nextCardIds = Object.keys(next.cards);
-
-  const deletes = originalCardIds.filter((id) => !nextCardIds.includes(id));
-  const adds = nextCardIds
-    .filter((id) => !originalCardIds.includes(id))
-    .map((id) => next.cards[id]);
-
-  const updates: OriginalCard[] = [];
-  for (const nextCard of Object.values(next.cards)) {
-    const originalCard = original.cards[nextCard.id];
-    if (
-      originalCard &&
-      !isEqual(nextCard, originalCard) &&
-      nextCard.type === 'original'
-    ) {
-      updates.push(nextCard);
-    }
-  }
-
-  const moves: CardMove[] = [];
-  next.deck.forEach((id, index) => {
-    if (original.deck[index] !== id) {
-      moves.push({
-        id,
-        destination: { type: 'deck', position: index },
-      });
-    }
-  });
-  next.hands.forEach((hand, handIndex) => {
-    hand.forEach((id, index) => {
-      if (original.hands[handIndex][index] !== id) {
-        moves.push({
-          id,
-          destination: { type: 'hand', handIndex, position: index },
-        });
-      }
-    });
-  });
-
-  return { adds, deletes, updates, moves };
-};
-
 export const useSyncedState = () => {
-  // const [cards, setCards] = useState<CardIndex>({});
-  // ordering of cards in deck
-  // const [deck, setDeck] = useState<string[]>([]);
-  // const [hands, setHands] = useState<string[][]>([[]]);
-
   const [appState, setAppState] = useState<AppState>({
     cards: {},
     deck: [],
     hands: [[]],
   });
 
-  // for baffling reasons, the fetchLatestData callback isn't getting updates to
-  // appState, *but* if you put it in a ref it's fine?
-  const appStateRef = useRef(appState);
-  appStateRef.current = appState;
-
-  const branchpoint = useRef<AppState | null>(null);
-
-  const fetchLatestData = async () => {
-    return (await (await fetch('api/getData')).json())['data'] as AppState;
-  };
-
-  const fetchAndWriteLatestData = async () => {
-    const serverState: AppState = await fetchLatestData();
-
-    let finalState: AppState;
-    if (branchpoint.current) {
-      finalState = mergeStates(
-        branchpoint.current,
-        serverState,
-        appStateRef.current
-      );
-    } else {
-      finalState = serverState;
-    }
-
-    branchpoint.current = finalState;
-    setAppState(finalState);
-  };
-
+  const initialized = useRef(false);
   useEffect(() => {
-    const handler = setInterval(fetchAndWriteLatestData, 5000);
-    fetchAndWriteLatestData();
-    return () => clearTimeout(handler);
+    if (!initialized.current) {
+      const storedState = window.localStorage.getItem('appState');
+      console.log('storedState', storedState);
+      if (storedState) {
+        setAppState(JSON.parse(storedState));
+      }
+      initialized.current = true;
+    }
   }, []);
 
-  const putData = debounce(async (data: AppState) => {
-    const latest = await fetchLatestData();
-    const merged = mergeStates(branchpoint.current!, latest, data);
-    branchpoint.current = merged;
-    setAppState(merged);
-
-    console.log('putting', merged);
-    await fetch('api/putData', {
-      method: 'POST',
-      body: JSON.stringify(merged),
-    });
-  }, 2000);
-
-  const lastPut = useRef<AppState | null>(null);
   useEffect(() => {
-    if (!isEqual(lastPut.current, appState) && branchpoint.current) {
-      lastPut.current = appState;
-      putData(appState);
+    if (initialized) {
+      window.localStorage.setItem('appState', JSON.stringify(appState));
     }
-  }, [appState, putData]);
-
-  const mergeStates = (
-    branchpoint: AppState,
-    serverState: AppState,
-    localState: AppState
-  ) => {
-    console.log('branchpoint', branchpoint);
-    console.log('serverState', serverState);
-    console.log('localState', localState);
-
-    const finalState = cloneDeep(branchpoint);
-
-    const {
-      adds: serverAdds,
-      deletes: serverDeletes,
-      updates: serverUpdates,
-      moves: serverMoves,
-    } = getDiff(branchpoint, serverState);
-    const {
-      adds: localAdds,
-      deletes: localDeletes,
-      updates: localUpdates,
-      moves: localMoves,
-    } = getDiff(branchpoint, localState);
-
-    const adds = [...serverAdds, ...localAdds];
-    const deletes = uniq([...serverDeletes, ...localDeletes]);
-    const updates = uniqBy([...serverUpdates, ...localUpdates], 'id');
-    const moves = uniqBy([...serverMoves, ...localMoves], 'id');
-
-    console.log('merge outcome', { adds, deletes, updates, moves });
-
-    for (const del of deletes) {
-      applyDelete(finalState, del);
-    }
-
-    for (const add of adds) {
-      applyAdd(finalState, add);
-    }
-
-    for (const update of updates) {
-      applyUpdate(finalState, update);
-    }
-
-    for (const move of moves) {
-      applyMove(finalState, move);
-    }
-
-    return finalState;
-  };
+  }, [appState]);
 
   const removeCardsEverywehre = (appState: AppState, ids: string[]) => {
     appState.deck = appState.deck.filter((id) => !ids.includes(id));
@@ -278,9 +139,14 @@ export const useSyncedState = () => {
     for (const newDupe of newDuplicates) {
       applyAdd(appState, newDupe);
     }
-    for (const toDelete of dupeIdsToDelete) {
-      applyDelete(appState, toDelete);
-    }
+
+    appState.cards = pickBy(
+      appState.cards,
+      (c) => !dupeIdsToDelete.includes(c.id)
+    );
+    removeCardsEverywehre(appState, dupeIdsToDelete);
+
+    appState.cards[card.id] = card;
   };
   const submitUpdate = (card: OriginalCard) => {
     const nextState = cloneDeep(appState);
