@@ -32,10 +32,16 @@ type DuplicateCard = { type: 'duplicate'; id: string; parentId: string };
 
 type Card = OriginalCard | DuplicateCard;
 
-let handler = null;
+type AppData = {
+  cards: { [id: string]: Card };
+  deck: string[];
+  hands: string[][];
+};
+
+let handler: NodeJS.Timeout | null = null;
 const debounce =
-  (fn, delay) =>
-  (...args) => {
+  (fn: (...args: any[]) => void, delay: number) =>
+  (...args: any[]) => {
     if (handler) {
       clearTimeout(handler);
     }
@@ -70,17 +76,14 @@ export const Cards = () => {
     firstFetchDone.current = true;
   };
 
-  const putData = useCallback(
-    debounce(async (data: any) => {
-      console.log('putting', data);
-      await fetch('api/putData', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-      unputChanges.current = false;
-    }, 2000),
-    []
-  );
+  const putData = debounce(async (data: any) => {
+    console.log('putting', data);
+    await fetch('api/putData', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    unputChanges.current = false;
+  }, 2000);
 
   useEffect(() => {
     const work = async () => {
@@ -95,7 +98,7 @@ export const Cards = () => {
     return () => clearTimeout(handler);
   }, []);
 
-  const lastPut = useRef(null);
+  const lastPut = useRef<AppData | null>(null);
   useEffect(() => {
     if (
       !isEqual(lastPut.current, { cards, deck, hands }) &&
