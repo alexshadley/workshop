@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   PlusIcon,
   ArrowPathIcon,
@@ -70,14 +70,17 @@ export const Cards = () => {
     firstFetchDone.current = true;
   };
 
-  const putData = debounce(async (data: any) => {
-    console.log('putting', data);
-    await fetch('api/putData', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    unputChanges.current = false;
-  }, 2000);
+  const putData = useCallback(
+    debounce(async (data: any) => {
+      console.log('putting', data);
+      await fetch('api/putData', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      unputChanges.current = false;
+    }, 2000),
+    []
+  );
 
   useEffect(() => {
     const work = async () => {
@@ -102,7 +105,7 @@ export const Cards = () => {
       lastPut.current = { cards, deck, hands };
       putData({ cards, deck, hands });
     }
-  }, [cards, deck, hands]);
+  }, [cards, deck, hands, putData]);
 
   const shuffleDeck = () => {
     setDeck((oldDeck) => shuffle(oldDeck));
