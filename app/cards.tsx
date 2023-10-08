@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   PlusIcon,
   ArrowPathIcon,
@@ -9,8 +9,6 @@ import {
   TrashIcon,
   ArrowUpOnSquareIcon,
 } from '@heroicons/react/24/outline';
-import { v4 as uuid } from 'uuid';
-import { shuffle, pickBy, isEqual, clone, cloneDeep } from 'lodash';
 import {
   DndContext,
   DragEndEvent,
@@ -19,210 +17,116 @@ import {
 } from '@dnd-kit/core';
 import dragHandle from '../public/drag-handle.svg';
 import Image from 'next/image';
-
-type OriginalCard = {
-  type: 'original';
-  id: string;
-  name: string;
-  description: string;
-  duplication: number;
-};
-
-type DuplicateCard = { type: 'duplicate'; id: string; parentId: string };
-
-type Card = OriginalCard | DuplicateCard;
-
-type AppData = {
-  cards: { [id: string]: Card };
-  deck: string[];
-  hands: string[][];
-};
-
-let handler: NodeJS.Timeout | null = null;
-const debounce =
-  (fn: (...args: any[]) => void, delay: number) =>
-  (...args: any[]) => {
-    if (handler) {
-      clearTimeout(handler);
-    }
-    handler = setTimeout(() => fn(...args), delay);
-  };
+import { Card, CardIndex, OriginalCard, useSyncedState } from './syncedState';
+import { v4 as uuid } from 'uuid';
 
 export const Cards = () => {
-  // registry of all cards
-  const firstCardId = uuid();
-  const [cards, setCards] = useState<{ [id: string]: Card }>({
-    [firstCardId]: {
-      type: 'original',
-      id: firstCardId,
-      name: '',
-      description: '',
-      duplication: 1,
-    },
-  });
-  // ordering of cards in deck
-  const [deck, setDeck] = useState<string[]>([firstCardId]);
-  const [hands, setHands] = useState<string[][]>([[]]);
+  const {
+    appState: { cards, deck, hands },
+    submitAdd,
+    submitDelete,
+    submitUpdate,
+    submitMove,
+    submitShuffle,
+  } = useSyncedState();
 
-  const unputChanges = useRef(false);
-  const firstFetchDone = useRef(false);
+  // const newCard = () => {
+  //   const n = {
+  //     type: 'original',
+  //     id: uuid(),
+  //     name: '',
+  //     description: '',
+  //     duplication: 1,
+  //   } as const;
+  //   setCards((oldCards) => ({
+  //     [n.id]: n,
+  //     ...oldCards,
+  //   }));
+  //   setDeck((oldDeck) => [n.id, ...oldDeck]);
+  // };
 
-  const fetchLatestData = async () => {
-    const data = (await (await fetch('api/getData')).json())['data'];
-    setCards(data.cards);
-    setDeck(data.deck);
-    setHands(data.hands);
-    console.log('data', data);
-    firstFetchDone.current = true;
-  };
+  // const addCardsToHand = (cardIds: string[], handIndex: number) => {
+  //   setHands((oldHands) => {
+  //     console.log('adding to', oldHands);
+  //     return oldHands.map<string[]>((h, i) => {
+  //       if (i === handIndex) {
+  //         return [...cardIds, ...h];
+  //       } else {
+  //         return [...h];
+  //       }
+  //     });
+  //   });
+  // };
 
-  const putData = debounce(async (data: any) => {
-    console.log('putting', data);
-    await fetch('api/putData', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    unputChanges.current = false;
-  }, 2000);
+  // const updateCard = (card: OriginalCard) => {
+  //   const originalCard = cards[card.id] as OriginalCard;
 
-  useEffect(() => {
-    const work = async () => {
-      console.log('unput changes?', unputChanges.current);
-      if (!unputChanges.current) {
-        await fetchLatestData();
-      }
-    };
+  //   let duplicationChange = card.duplication - originalCard.duplication;
 
-    const handler = setInterval(work, 5000);
-    fetchLatestData();
-    return () => clearTimeout(handler);
-  }, []);
+  //   // console.log('duplication change', duplicationChange);
 
-  const lastPut = useRef<AppData | null>(null);
-  useEffect(() => {
-    if (
-      !isEqual(lastPut.current, { cards, deck, hands }) &&
-      firstFetchDone.current
-    ) {
-      unputChanges.current = true;
-      lastPut.current = { cards, deck, hands };
-      putData({ cards, deck, hands });
-    }
-  }, [cards, deck, hands, putData]);
+  //   let newDuplicates: DuplicateCard[] = [];
+  //   let dupeIdsToDelete: string[] = [];
+  //   if (duplicationChange > 0) {
+  //     for (let i = 0; i < duplicationChange; i++) {
+  //       newDuplicates.push({
+  //         type: 'duplicate',
+  //         id: uuid(),
+  //         parentId: originalCard.id,
+  //       });
+  //     }
+  //   } else if (duplicationChange < 0) {
+  //     const dupeIds = Object.values(cards)
+  //       .filter((c) => c.type === 'duplicate' && c.parentId === originalCard.id)
+  //       .map((c) => c.id);
+  //     console.log('dupeIds', dupeIds);
+  //     console.log('duplication change', duplicationChange);
+  //     dupeIdsToDelete = dupeIds.slice(0, duplicationChange * -1);
+  //     console.log('dupeIdsToDelete', dupeIds);
+  //   }
 
-  const shuffleDeck = () => {
-    setDeck((oldDeck) => shuffle(oldDeck));
-  };
+  //   setCards((oldCards) => {
+  //     const newCards = { ...oldCards };
+  //     newDuplicates.forEach((d) => (newCards[d.id] = d));
+  //     dupeIdsToDelete.forEach((id) => delete newCards[id]);
 
-  const newCard = () => {
-    const n = {
-      type: 'original',
-      id: uuid(),
-      name: '',
-      description: '',
-      duplication: 1,
-    } as const;
-    setCards((oldCards) => ({
-      [n.id]: n,
-      ...oldCards,
-    }));
-    setDeck((oldDeck) => [n.id, ...oldDeck]);
-  };
+  //     return { ...newCards, [card.id]: card };
+  //   });
+  //   setDeck((oldDeck) => {
+  //     let newDeck = [...oldDeck];
+  //     const originalPosition = oldDeck.indexOf(originalCard.id);
+  //     newDuplicates.forEach((d) => newDeck.splice(originalPosition, 0, d.id));
 
-  const removeCardsEverywehre = (ids: string[]) => {
-    setDeck((oldDeck) => {
-      return [...oldDeck].filter((id) => !ids.includes(id));
-    });
-    setHands((oldHands) => {
-      console.log('removing from', oldHands);
-      return oldHands.map((h) => {
-        return [...h].filter((id) => !ids.includes(id));
-      });
-    });
-  };
+  //     return newDeck;
+  //   });
+  //   removeCardsEverywehre(dupeIdsToDelete);
+  // };
 
-  const addCardsToHand = (cardIds: string[], handIndex: number) => {
-    setHands((oldHands) => {
-      console.log('adding to', oldHands);
-      return oldHands.map<string[]>((h, i) => {
-        if (i === handIndex) {
-          return [...cardIds, ...h];
-        } else {
-          return [...h];
-        }
-      });
-    });
-  };
+  // const deleteCard = (id: string) => {
+  //   const originalCard = cards[id] as OriginalCard;
 
-  const updateCard = (card: OriginalCard) => {
-    const originalCard = cards[card.id] as OriginalCard;
+  //   const idsToDelete = Object.values(cards)
+  //     .filter(
+  //       (c) =>
+  //         (c.type === 'original' && c.id === originalCard.id) ||
+  //         (c.type === 'duplicate' && c.parentId === originalCard.id)
+  //     )
+  //     .map((c) => c.id);
 
-    let duplicationChange = card.duplication - originalCard.duplication;
-
-    // console.log('duplication change', duplicationChange);
-
-    let newDuplicates: DuplicateCard[] = [];
-    let dupeIdsToDelete: string[] = [];
-    if (duplicationChange > 0) {
-      for (let i = 0; i < duplicationChange; i++) {
-        newDuplicates.push({
-          type: 'duplicate',
-          id: uuid(),
-          parentId: originalCard.id,
-        });
-      }
-    } else if (duplicationChange < 0) {
-      const dupeIds = Object.values(cards)
-        .filter((c) => c.type === 'duplicate' && c.parentId === originalCard.id)
-        .map((c) => c.id);
-      console.log('dupeIds', dupeIds);
-      console.log('duplication change', duplicationChange);
-      dupeIdsToDelete = dupeIds.slice(0, duplicationChange * -1);
-      console.log('dupeIdsToDelete', dupeIds);
-    }
-
-    setCards((oldCards) => {
-      const newCards = { ...oldCards };
-      newDuplicates.forEach((d) => (newCards[d.id] = d));
-      dupeIdsToDelete.forEach((id) => delete newCards[id]);
-
-      return { ...newCards, [card.id]: card };
-    });
-    setDeck((oldDeck) => {
-      let newDeck = [...oldDeck];
-      const originalPosition = oldDeck.indexOf(originalCard.id);
-      newDuplicates.forEach((d) => newDeck.splice(originalPosition, 0, d.id));
-
-      return newDeck;
-    });
-    removeCardsEverywehre(dupeIdsToDelete);
-  };
-
-  const deleteCard = (id: string) => {
-    const originalCard = cards[id] as OriginalCard;
-
-    const idsToDelete = Object.values(cards)
-      .filter(
-        (c) =>
-          (c.type === 'original' && c.id === originalCard.id) ||
-          (c.type === 'duplicate' && c.parentId === originalCard.id)
-      )
-      .map((c) => c.id);
-
-    console.log('idsToDelete', idsToDelete);
-    setCards((oldCards) =>
-      pickBy(oldCards, (c) => !idsToDelete.includes(c.id))
-    );
-    removeCardsEverywehre(idsToDelete);
-  };
+  //   console.log('idsToDelete', idsToDelete);
+  //   setCards((oldCards) =>
+  //     pickBy(oldCards, (c) => !idsToDelete.includes(c.id))
+  //   );
+  //   removeCardsEverywehre(idsToDelete);
+  // };
 
   const drawTopCard = (handIndex: number) => {
-    if (deck.length === 0) {
-      return;
+    if (deck.length > 0) {
+      submitMove({
+        id: deck[0],
+        destination: { type: 'hand', handIndex, position: 0 },
+      });
     }
-    const cardId = deck[0];
-    setDeck(deck.slice(1));
-    addCardsToHand([cardId], handIndex);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -233,13 +137,17 @@ export const Cards = () => {
     const dropData: any = event.over.data.current;
     const cardId: string = event.active.id as string;
 
-    removeCardsEverywehre([cardId]);
-
-    if (dropData.type === 'hand') {
-      addCardsToHand([cardId], dropData.handIndex);
-    } else if (dropData.type === 'deck') {
-      setDeck((oldDeck) => [cardId, ...oldDeck]);
+    let destination;
+    if (dropData.type === 'deck') {
+      destination = { type: 'deck', position: 0 } as const;
+    } else {
+      destination = {
+        type: 'hand',
+        handIndex: dropData.handIndex,
+        position: 0,
+      } as const;
     }
+    submitMove({ id: cardId, destination });
   };
 
   return (
@@ -250,7 +158,7 @@ export const Cards = () => {
             <Hand
               handIndex={i}
               cards={cards}
-              onUpdateCard={updateCard}
+              onUpdateCard={submitUpdate}
               handCards={h}
               onDrawTopCard={() => drawTopCard(i)}
             />
@@ -259,10 +167,18 @@ export const Cards = () => {
         <Deck
           cards={cards}
           deck={deck}
-          onShuffleDeck={shuffleDeck}
-          onNewCard={newCard}
-          onUpdateCard={updateCard}
-          onDeleteCard={deleteCard}
+          onShuffleDeck={submitShuffle}
+          onNewCard={() => {
+            submitAdd({
+              type: 'original',
+              id: uuid(),
+              name: '',
+              description: '',
+              duplication: 1,
+            });
+          }}
+          onUpdateCard={submitUpdate}
+          onDeleteCard={submitDelete}
         />
       </div>
     </DndContext>
@@ -277,7 +193,7 @@ const Deck = ({
   onUpdateCard,
   onDeleteCard,
 }: {
-  cards: { [id: string]: Card };
+  cards: CardIndex;
   deck: string[];
   onShuffleDeck: () => void;
   onNewCard: () => void;
