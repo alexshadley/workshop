@@ -18,8 +18,9 @@ import {
 } from '@dnd-kit/core';
 import dragHandle from '../public/drag-handle.svg';
 import Image from 'next/image';
-import { Card, CardIndex, OriginalCard, useSyncedState } from './syncedState';
+import { useSyncedState } from './syncedState';
 import { v4 as uuid } from 'uuid';
+import { CardIndex, Hand, OriginalCard } from './appState';
 
 export const Cards = () => {
   const {
@@ -27,17 +28,31 @@ export const Cards = () => {
     submitAdd,
     submitDelete,
     submitUpdate,
+    changeDuplication,
     submitMove,
     submitShuffle,
-    submitAddHand,
+    submitUpsertHand,
     submitRemoveHand,
   } = useSyncedState();
 
-  const drawTopCard = (handIndex: number) => {
+  const duplicationByCard: { [cardId: string]: number } = {};
+  for (const card of Object.values(cards)) {
+    if (card.type !== 'original') {
+      continue;
+    }
+
+    const duplication =
+      Object.values(cards).filter(
+        (c) => c.type === 'duplicate' && c.parentId === card.id
+      ).length + 1;
+    duplicationByCard[card.id] = duplication;
+  }
+
+  const drawTopCard = (handId: string) => {
     if (deck.length > 0) {
       submitMove({
         id: deck[0],
-        destination: { type: 'hand', handIndex, position: 0 },
+        destination: { type: 'hand', handId, position: 0 },
       });
     }
   };
@@ -56,7 +71,7 @@ export const Cards = () => {
     } else {
       destination = {
         type: 'hand',
-        handIndex: dropData.handIndex,
+        handId: dropData.handId,
         position: 0,
       } as const;
     }
@@ -67,25 +82,29 @@ export const Cards = () => {
     <DndContext onDragEnd={handleDragEnd}>
       <div>
         <button
-          onClick={() => submitAddHand()}
-          className="border border-gray-500"
+          onClick={() => submitUpsertHand({ id: uuid(), name: 'Hand' })}
+          className="border border-gray-400 bg-gray-100 rounded p-1 hover:shadow mb-4"
         >
           Add hand
         </button>
-        {hands.map((h, i) => (
-          <div className="mb-10" key={i}>
-            <Hand
-              handIndex={i}
+        {Object.values(hands).map((h) => (
+          <div className="mb-10" key={h.id}>
+            <HandView
+              hand={h}
               cards={cards}
+              duplicationByCard={duplicationByCard}
+              onChangeDuplication={changeDuplication}
               onUpdateCard={submitUpdate}
-              handCards={h}
-              onDrawTopCard={() => drawTopCard(i)}
-              onDelete={() => submitRemoveHand(i)}
+              onDrawTopCard={() => drawTopCard(h.id)}
+              onDeleteHand={() => submitRemoveHand(h.id)}
+              onUpdateHand={(h) => submitUpsertHand(h)}
             />
           </div>
         ))}
         <Deck
           cards={cards}
+          duplicationByCard={duplicationByCard}
+          onChangeDuplication={changeDuplication}
           deck={deck}
           onShuffleDeck={submitShuffle}
           onNewCard={() => {
@@ -94,7 +113,6 @@ export const Cards = () => {
               id: uuid(),
               name: '',
               description: '',
-              duplication: 1,
             });
           }}
           onUpdateCard={submitUpdate}
@@ -107,6 +125,8 @@ export const Cards = () => {
 
 const Deck = ({
   cards,
+  duplicationByCard,
+  onChangeDuplication,
   deck,
   onShuffleDeck,
   onNewCard,
@@ -114,6 +134,8 @@ const Deck = ({
   onDeleteCard,
 }: {
   cards: CardIndex;
+  duplicationByCard: { [cardId: string]: number };
+  onChangeDuplication: (cardId: string, newDuplication: number) => void;
   deck: string[];
   onShuffleDeck: () => void;
   onNewCard: () => void;
@@ -177,6 +199,8 @@ const Deck = ({
                 deleteMode={deleteMode}
                 key={id}
                 originalCard={originalCard}
+                duplication={duplicationByCard[originalCard.id]}
+                onChangeDuplication={(n) => onChangeDuplication(id, n)}
                 onUpdate={onUpdateCard}
                 onDelete={() => onDeleteCard(originalCard.id)}
               />
@@ -191,16 +215,20 @@ const Deck = ({
 const CardTile = ({
   id,
   originalCard,
+  duplication,
   shown = true,
   deleteMode,
   onUpdate,
+  onChangeDuplication,
   onDelete,
 }: {
   id: string;
   originalCard: OriginalCard;
+  duplication: number;
   shown?: boolean;
   deleteMode?: boolean;
   onUpdate: (newCard: OriginalCard) => void;
+  onChangeDuplication: (newDuplication: number) => void;
   onDelete?: () => void;
 }) => {
   const [individuallyShown, setIndividuallyShown] = useState(false);
@@ -269,7 +297,7 @@ const CardTile = ({
             <XMarkIcon
               className={
                 'w-3 h-3' +
-                (originalCard.duplication === 1
+                (duplication === 1
                   ? ' invisible group-hover:visible focus:visible'
                   : '')
               }
@@ -278,14 +306,12 @@ const CardTile = ({
             <EditableNumber
               classes={
                 'w-6' +
-                (originalCard.duplication === 1
+                (duplication === 1
                   ? ' invisible group-hover:visible focus:visible'
                   : '')
               }
-              value={originalCard.duplication}
-              onChange={(newVal) =>
-                onUpdate({ ...originalCard, duplication: newVal })
-              }
+              value={duplication}
+              onChange={(newVal) => onChangeDuplication(newVal)}
             />
           </>
         )}
@@ -346,28 +372,30 @@ const EditableText = ({
   );
 };
 
-const Hand = ({
-  handIndex,
+const HandView = ({
+  hand,
   cards,
+  duplicationByCard,
+  onChangeDuplication,
   onUpdateCard,
-  handCards,
   onDrawTopCard,
-  onDelete,
+  onDeleteHand,
+  onUpdateHand,
 }: {
-  handIndex: number;
-  cards: { [id: string]: Card };
+  hand: Hand;
+  cards: CardIndex;
   onUpdateCard: (updatedCard: OriginalCard) => void;
-  handCards: string[];
+  duplicationByCard: { [cardId: string]: number };
+  onChangeDuplication: (cardId: string, newDuplication: number) => void;
   onDrawTopCard: () => void;
-  onDelete: () => void;
+  onDeleteHand: () => void;
+  onUpdateHand: (newHand: Omit<Hand, 'contents'>) => void;
 }) => {
-  const [name, setName] = useState('Hand');
-
   const { isOver, setNodeRef } = useDroppable({
-    id: `hand-${handIndex}`,
+    id: `hand-${hand.id}`,
     data: {
       type: 'hand',
-      handIndex,
+      handId: hand.id,
     },
   });
 
@@ -375,9 +403,16 @@ const Hand = ({
     <div ref={setNodeRef}>
       <div style={{ width: '600px' }}>
         <div className="flex justify-between mb-4">
-          <EditableText value={name} onChange={setName} classes="text-xl" />
+          <EditableText
+            value={hand.name}
+            onChange={(n) => onUpdateHand({ id: hand.id, name: n })}
+            classes="text-xl"
+          />
           <div className="flex gap-2">
-            <XMarkIcon className="w-6 h-6 cursor-pointer" onClick={onDelete} />
+            <XMarkIcon
+              className="w-6 h-6 cursor-pointer"
+              onClick={onDeleteHand}
+            />
             <ArrowUpOnSquareIcon
               className="w-6 h-6 cursor-pointer"
               onClick={onDrawTopCard}
@@ -385,7 +420,7 @@ const Hand = ({
           </div>
         </div>
         <div className="flex flex-col gap-3">
-          {handCards.map((id) => {
+          {hand.contents.map((id) => {
             let originalCard: OriginalCard;
             const card = cards[id];
             if (card.type === 'original') {
@@ -399,6 +434,8 @@ const Hand = ({
                 id={id}
                 key={id}
                 originalCard={originalCard}
+                duplication={duplicationByCard[originalCard.id]}
+                onChangeDuplication={(n) => onChangeDuplication(id, n)}
                 onUpdate={(c) => onUpdateCard(c)}
               />
             );

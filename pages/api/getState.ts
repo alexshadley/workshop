@@ -23,8 +23,6 @@ export default async function handler(
   try {
     const appDataColl = getAppDataCollection();
 
-    console.log('got req', req);
-
     const body = JSON.parse(req.body) as GetStateRequestBody;
 
     const appData = await appDataColl.findOne({ handId: 'the-only-hand' });
@@ -35,10 +33,12 @@ export default async function handler(
     appDataColl.updateOne(
       { handId: 'the-only-hand' },
       {
-        appState: req.body,
-        updates: [],
-        handId: 'the-only-hand',
+        $set: {
+          appState,
+          handId: 'the-only-hand',
+        },
       },
+
       { upsert: true }
     );
 

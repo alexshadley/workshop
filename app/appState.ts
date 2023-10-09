@@ -1,4 +1,4 @@
-import { pickBy } from 'lodash';
+import { orderBy, pickBy, sortBy } from 'lodash';
 import { v4 as uuid } from 'uuid';
 
 export type OriginalCard = {
@@ -6,7 +6,6 @@ export type OriginalCard = {
   id: string;
   name: string;
   description: string;
-  duplication: number;
 };
 
 export type DuplicateCard = { type: 'duplicate'; id: string; parentId: string };
@@ -15,10 +14,16 @@ export type Card = OriginalCard | DuplicateCard;
 
 export type CardIndex = { [id: string]: Card };
 
+export type Hand = {
+  id: string;
+  name: string;
+  contents: string[];
+};
+
 export type AppState = {
   cards: { [id: string]: Card };
   deck: string[];
-  hands: string[][];
+  hands: { [id: string]: Hand };
 };
 
 export type StateUpdate =
@@ -41,6 +46,21 @@ export type StateUpdate =
       id: string;
       type: 'moveCard';
       move: CardMove;
+    }
+  | {
+      id: string;
+      type: 'reorder';
+      reorder: Reorder;
+    }
+  | {
+      id: string;
+      type: 'upsertHand';
+      hand: Omit<Hand, 'contents'>;
+    }
+  | {
+      id: string;
+      type: 'deleteHand';
+      handId: string;
     };
 
 export type CardMove = {
@@ -50,10 +70,26 @@ export type CardMove = {
         type: 'deck';
         position: number;
       }
-    | { type: 'hand'; handIndex: number; position: number };
+    | { type: 'hand'; handId: string; position: number };
 };
 
-export const INITIAL_STATE: AppState = { cards: {}, deck: [], hands: [[]] };
+export type Reorder =
+  | {
+      type: 'hand';
+      handId: string;
+      order: string[];
+    }
+  | {
+      type: 'deck';
+      order: string[];
+    };
+
+const firstHandId = uuid();
+export const INITIAL_STATE: AppState = {
+  cards: {},
+  deck: [],
+  hands: { [firstHandId]: { id: firstHandId, name: 'Hand', contents: [] } },
+};
 
 export const applyStateUpdates = (
   appState: AppState,
@@ -68,14 +104,20 @@ export const applyStateUpdates = (
       applyUpdate(appState, u.card);
     } else if (u.type === 'moveCard') {
       applyMove(appState, u.move);
+    } else if (u.type === 'reorder') {
+      applyReorder(appState, u.reorder);
+    } else if (u.type === 'upsertHand') {
+      applyUpsertHand(appState, u.hand);
+    } else if (u.type === 'deleteHand') {
+      applyDeleteHand(appState, u.handId);
     }
   }
 };
 
 const removeCardsEverywehre = (appState: AppState, ids: string[]) => {
   appState.deck = appState.deck.filter((id) => !ids.includes(id));
-  appState.hands = appState.hands.map((h) => {
-    return [...h].filter((id) => !ids.includes(id));
+  Object.values(appState.hands).forEach((h) => {
+    h.contents = h.contents.filter((id) => !ids.includes(id));
   });
 };
 
@@ -85,61 +127,11 @@ export const applyAdd = (appState: AppState, card: Card) => {
 };
 
 export const applyDelete = (appState: AppState, id: string) => {
-  const originalCard = appState.cards[id] as OriginalCard;
-
-  if (!originalCard) {
-    return;
-  }
-
-  const idsToDelete = Object.values(appState.cards)
-    .filter(
-      (c) =>
-        (c.type === 'original' && c.id === originalCard.id) ||
-        (c.type === 'duplicate' && c.parentId === originalCard.id)
-    )
-    .map((c) => c.id);
-
-  appState.cards = pickBy(appState.cards, (c) => !idsToDelete.includes(c.id));
-  removeCardsEverywehre(appState, idsToDelete);
+  appState.cards = pickBy(appState.cards, (c) => id !== c.id);
+  removeCardsEverywehre(appState, [id]);
 };
 
-export const applyUpdate = (appState: AppState, card: OriginalCard) => {
-  const originalCard = appState.cards[card.id] as OriginalCard;
-
-  const duplicationChange = card.duplication - originalCard.duplication;
-
-  // console.log('duplication change', duplicationChange);
-
-  let newDuplicates: DuplicateCard[] = [];
-  let dupeIdsToDelete: string[] = [];
-  if (duplicationChange > 0) {
-    for (let i = 0; i < duplicationChange; i++) {
-      newDuplicates.push({
-        type: 'duplicate',
-        id: uuid(),
-        parentId: originalCard.id,
-      });
-    }
-  } else if (duplicationChange < 0) {
-    const dupeIds = Object.values(appState.cards)
-      .filter((c) => c.type === 'duplicate' && c.parentId === originalCard.id)
-      .map((c) => c.id);
-    console.log('dupeIds', dupeIds);
-    console.log('duplication change', duplicationChange);
-    dupeIdsToDelete = dupeIds.slice(0, duplicationChange * -1);
-    console.log('dupeIdsToDelete', dupeIds);
-  }
-
-  for (const newDupe of newDuplicates) {
-    applyAdd(appState, newDupe);
-  }
-
-  appState.cards = pickBy(
-    appState.cards,
-    (c) => !dupeIdsToDelete.includes(c.id)
-  );
-  removeCardsEverywehre(appState, dupeIdsToDelete);
-
+export const applyUpdate = (appState: AppState, card: Card) => {
   appState.cards[card.id] = card;
 };
 
@@ -148,10 +140,32 @@ export const applyMove = (appState: AppState, move: CardMove) => {
   if (move.destination.type === 'deck') {
     appState.deck.splice(move.destination.position, 0, move.id);
   } else if (move.destination.type === 'hand') {
-    appState.hands[move.destination.handIndex].splice(
+    appState.hands[move.destination.handId].contents.splice(
       move.destination.position,
       0,
       move.id
     );
   }
+};
+
+export const applyReorder = (appState: AppState, reorder: Reorder) => {
+  if (reorder.type === 'deck') {
+    appState.deck = sortBy(appState.deck, (id) => reorder.order.indexOf(id));
+  } else {
+    throw new Error('not implemented');
+  }
+};
+
+export const applyUpsertHand = (
+  appState: AppState,
+  hand: Omit<Hand, 'contents'>
+) => {
+  appState.hands[hand.id] = {
+    ...hand,
+    contents: appState.hands[hand.id]?.contents ?? [],
+  };
+};
+
+export const applyDeleteHand = (appState: AppState, handId: string) => {
+  delete appState.hands[handId];
 };
