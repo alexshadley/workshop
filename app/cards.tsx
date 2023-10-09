@@ -29,6 +29,8 @@ export const Cards = () => {
     submitUpdate,
     submitMove,
     submitShuffle,
+    submitAddHand,
+    submitRemoveHand,
   } = useSyncedState();
 
   const drawTopCard = (handIndex: number) => {
@@ -64,6 +66,12 @@ export const Cards = () => {
   return (
     <DndContext onDragEnd={handleDragEnd}>
       <div>
+        <button
+          onClick={() => submitAddHand()}
+          className="border border-gray-500"
+        >
+          Add hand
+        </button>
         {hands.map((h, i) => (
           <div className="mb-10" key={i}>
             <Hand
@@ -72,6 +80,7 @@ export const Cards = () => {
               onUpdateCard={submitUpdate}
               handCards={h}
               onDrawTopCard={() => drawTopCard(i)}
+              onDelete={() => submitRemoveHand(i)}
             />
           </div>
         ))}
@@ -343,12 +352,14 @@ const Hand = ({
   onUpdateCard,
   handCards,
   onDrawTopCard,
+  onDelete,
 }: {
   handIndex: number;
   cards: { [id: string]: Card };
   onUpdateCard: (updatedCard: OriginalCard) => void;
   handCards: string[];
   onDrawTopCard: () => void;
+  onDelete: () => void;
 }) => {
   const [name, setName] = useState('Hand');
 
@@ -366,6 +377,7 @@ const Hand = ({
         <div className="flex justify-between mb-4">
           <EditableText value={name} onChange={setName} classes="text-xl" />
           <div className="flex gap-2">
+            <XMarkIcon className="w-6 h-6 cursor-pointer" onClick={onDelete} />
             <ArrowUpOnSquareIcon
               className="w-6 h-6 cursor-pointer"
               onClick={onDrawTopCard}

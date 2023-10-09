@@ -178,6 +178,17 @@ export const useSyncedState = () => {
     setAppState(nextState);
   };
 
+  const submitAddHand = () => {
+    const nextState = cloneDeep(appState);
+    nextState.hands = [...nextState.hands, []];
+    setAppState(nextState);
+  };
+  const submitRemoveHand = (handIndex: number) => {
+    const nextState = cloneDeep(appState);
+    nextState.hands = nextState.hands.splice(handIndex, 1);
+    setAppState(nextState);
+  };
+
   console.log('card ids', new Set(Object.keys(appState.cards)));
   console.log(
     'deck & card ids',
@@ -198,5 +209,7 @@ export const useSyncedState = () => {
     submitUpdate,
     submitMove,
     submitShuffle,
+    submitAddHand,
+    submitRemoveHand,
   };
 };
