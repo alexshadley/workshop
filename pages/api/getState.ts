@@ -1,18 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getAppDataCollection } from '../../app/mongodb';
 import {
-  AppState,
-  INITIAL_STATE,
+  CardSetState,
+  getInitialState,
   StateUpdate,
   applyStateUpdates,
 } from '@/app/appState';
 
 export type GetStateResponseData = {
   message: string;
-  appState: AppState | null;
+  appState: CardSetState | null;
 };
 
 export type GetStateRequestBody = {
+  cardSetId: string;
   updates: StateUpdate[];
 };
 
@@ -25,20 +26,19 @@ export default async function handler(
 
     const body = JSON.parse(req.body) as GetStateRequestBody;
 
-    const appData = await appDataColl.findOne({ handId: 'the-only-hand' });
+    const appData = await appDataColl.findOne({ handId: body.cardSetId });
 
-    const appState = appData?.appState ?? INITIAL_STATE;
+    const appState = appData?.appState ?? getInitialState(body.cardSetId);
     applyStateUpdates(appState, body.updates);
 
     appDataColl.updateOne(
-      { handId: 'the-only-hand' },
+      { handId: body.cardSetId },
       {
         $set: {
           appState,
-          handId: 'the-only-hand',
+          handId: body.cardSetId,
         },
       },
-
       { upsert: true }
     );
 

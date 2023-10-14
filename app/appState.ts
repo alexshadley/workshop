@@ -20,7 +20,9 @@ export type Hand = {
   contents: string[];
 };
 
-export type AppState = {
+export type CardSetState = {
+  id: string;
+  name: string;
   cards: { [id: string]: Card };
   deck: string[];
   hands: { [id: string]: Hand };
@@ -61,6 +63,11 @@ export type StateUpdate =
       id: string;
       type: 'deleteHand';
       handId: string;
+    }
+  | {
+      id: string;
+      type: 'renameCardSet';
+      name: string;
     };
 
 export type CardMove = {
@@ -85,14 +92,16 @@ export type Reorder =
     };
 
 const firstHandId = uuid();
-export const INITIAL_STATE: AppState = {
+export const getInitialState = (id: string) => ({
+  id,
+  name: 'Deck',
   cards: {},
   deck: [],
   hands: { [firstHandId]: { id: firstHandId, name: 'Hand', contents: [] } },
-};
+});
 
 export const applyStateUpdates = (
-  appState: AppState,
+  appState: CardSetState,
   updates: StateUpdate[]
 ) => {
   for (const u of updates) {
@@ -110,32 +119,34 @@ export const applyStateUpdates = (
       applyUpsertHand(appState, u.hand);
     } else if (u.type === 'deleteHand') {
       applyDeleteHand(appState, u.handId);
+    } else if (u.type === 'renameCardSet') {
+      applyRenameCardSet(appState, u.name);
     }
   }
 };
 
-const removeCardsEverywehre = (appState: AppState, ids: string[]) => {
+const removeCardsEverywehre = (appState: CardSetState, ids: string[]) => {
   appState.deck = appState.deck.filter((id) => !ids.includes(id));
   Object.values(appState.hands).forEach((h) => {
     h.contents = h.contents.filter((id) => !ids.includes(id));
   });
 };
 
-export const applyAdd = (appState: AppState, card: Card) => {
+export const applyAdd = (appState: CardSetState, card: Card) => {
   appState.cards[card.id] = card;
   appState.deck = [card.id, ...appState.deck];
 };
 
-export const applyDelete = (appState: AppState, id: string) => {
+export const applyDelete = (appState: CardSetState, id: string) => {
   appState.cards = pickBy(appState.cards, (c) => id !== c.id);
   removeCardsEverywehre(appState, [id]);
 };
 
-export const applyUpdate = (appState: AppState, card: Card) => {
+export const applyUpdate = (appState: CardSetState, card: Card) => {
   appState.cards[card.id] = card;
 };
 
-export const applyMove = (appState: AppState, move: CardMove) => {
+export const applyMove = (appState: CardSetState, move: CardMove) => {
   removeCardsEverywehre(appState, [move.id]);
   if (move.destination.type === 'deck') {
     appState.deck.splice(move.destination.position, 0, move.id);
@@ -148,7 +159,7 @@ export const applyMove = (appState: AppState, move: CardMove) => {
   }
 };
 
-export const applyReorder = (appState: AppState, reorder: Reorder) => {
+export const applyReorder = (appState: CardSetState, reorder: Reorder) => {
   if (reorder.type === 'deck') {
     appState.deck = sortBy(appState.deck, (id) => reorder.order.indexOf(id));
   } else {
@@ -157,7 +168,7 @@ export const applyReorder = (appState: AppState, reorder: Reorder) => {
 };
 
 export const applyUpsertHand = (
-  appState: AppState,
+  appState: CardSetState,
   hand: Omit<Hand, 'contents'>
 ) => {
   appState.hands[hand.id] = {
@@ -166,6 +177,10 @@ export const applyUpsertHand = (
   };
 };
 
-export const applyDeleteHand = (appState: AppState, handId: string) => {
+export const applyDeleteHand = (appState: CardSetState, handId: string) => {
   delete appState.hands[handId];
+};
+
+export const applyRenameCardSet = (appState: CardSetState, newName: string) => {
+  appState.name = newName;
 };

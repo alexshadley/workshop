@@ -10,7 +10,7 @@ import {
 } from 'lodash';
 import { useEffect, useRef, useState } from 'react';
 import {
-  AppState,
+  CardSetState,
   Card,
   CardMove,
   DuplicateCard,
@@ -39,8 +39,11 @@ const debounce =
     handler = setTimeout(() => fn(...args), delay);
   };
 
-export const useSyncedState = () => {
-  const [appState_, setAppState] = useState<AppState>({
+export const useSyncedState = (cardSetId: string, active: boolean) => {
+  console.log('cardsetid', cardSetId);
+  const [appState_, setAppState] = useState<CardSetState>({
+    id: cardSetId,
+    name: 'Deck',
     cards: {},
     deck: [],
     hands: {},
@@ -51,14 +54,33 @@ export const useSyncedState = () => {
   const stateUpdatesRef = useRef(stateUpdates);
   stateUpdatesRef.current = stateUpdates;
 
+  const cardSetIdRef = useRef(cardSetId);
+  cardSetIdRef.current = cardSetId;
+
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  const firstFetchComplete = useRef(false);
+
   const appState = cloneDeep(appState_);
   applyStateUpdates(appState, stateUpdates);
 
   useEffect(() => {
     const syncState = async () => {
       const updatesSent = stateUpdatesRef.current.map((s) => s.id);
+      if (
+        updatesSent.length === 0 &&
+        firstFetchComplete.current &&
+        !activeRef.current
+      ) {
+        console.log('not active, skipping updates');
+        return;
+      }
       console.log('sending updates: ', stateUpdatesRef.current);
-      const body: GetStateRequestBody = { updates: stateUpdatesRef.current };
+      const body: GetStateRequestBody = {
+        updates: stateUpdatesRef.current,
+        cardSetId: cardSetIdRef.current,
+      };
       const response = (await (
         await fetch('api/getState', {
           method: 'POST',
@@ -71,12 +93,16 @@ export const useSyncedState = () => {
           oldUpdates.filter((u) => !updatesSent.includes(u.id))
         );
         setAppState(response.appState);
+        firstFetchComplete.current = true;
       }
     };
 
     syncState();
     const handler = setInterval(syncState, 3000);
-    return () => clearTimeout(handler);
+    return () => {
+      clearTimeout(handler);
+      syncState();
+    };
   }, []);
 
   const submitAdd = (card: Card) => {
@@ -197,6 +223,17 @@ export const useSyncedState = () => {
     ]);
   };
 
+  const submitRenameCardSet = (newName: string) => {
+    setStateUpdates((oldUpdates) => [
+      ...oldUpdates,
+      {
+        id: uuid(),
+        type: 'renameCardSet',
+        name: newName,
+      },
+    ]);
+  };
+
   // console.log('card ids', new Set(Object.keys(appState.cards)));
   // console.log(
   //   'deck & card ids',
@@ -225,5 +262,6 @@ export const useSyncedState = () => {
     submitShuffle,
     submitUpsertHand,
     submitRemoveHand,
+    submitRenameCardSet,
   };
 };
